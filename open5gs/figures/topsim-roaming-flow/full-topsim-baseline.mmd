@@ -1,0 +1,160 @@
+%%{init: {
+  "theme": "default",
+  "sequence": {
+    "showSequenceNumbers": true,
+    "mirrorActors": false,
+    "wrap": true,
+    "width": 150
+  }
+}}%%
+sequenceDiagram
+    autonumber
+    participant MPF as Mobility Prediction
+    participant PB as TOPSSIM Profile Broker
+    participant CB as Compatibility Broker
+    participant PCR as Provider Capability Registry
+    participant HNRF as H-NRF
+    participant HUDM as H-UDM
+    participant HUDR as H-UDR
+    participant HDB as Open5GS DB
+    participant RCF
+    participant SDMCF as SDM-CF
+    participant UE
+    participant gNB
+    participant VAMF as V-AMF
+    participant VPCF as V-PCF
+    participant VSMF as V-SMF
+    participant VUPF as V-UPF
+
+    %% TOPSSIM baseline: preparation plus standard runtime consumption.
+    %% TOPSSIM sources: /Users/alexis/Downloads/main-10-topsim-architecture-final.tex
+    %% sections: preparation lifecycle, SDM-CF, RCF, SDM-CF scope, policy-preparation records.
+    %% Open5GS runtime source paths are the same as full-open5gs-baseline.mmd.
+
+    rect rgb(232,245,255)
+    note over MPF,SDMCF: Phase 0 - Preparation before runtime / roaming
+    MPF->>PB: Predicted roaming context<br/>UE binding, target VPLMN, validity window,<br/>optional DNN / S-NSSAI / roaming mode
+    PB->>PCR: Get target VPLMN capability profile<br/>DNN, S-NSSAI, LBO/HR, NF/service availability
+    PCR-->>PB: Capability profile + constraints
+
+    PB->>HNRF: Nnrf_NFDiscovery<br/>target=UDM, service=nudm-sdm
+    HNRF-->>PB: H-UDM NFProfile / apiRoot
+
+    PB->>HUDM: Authorized Nudm_SDM GET<br/>am-data, smf-select-data,<br/>optional nssai / ue-context-in-smf-data
+    HUDM->>HUDR: Nudr_DR GET<br/>provisioned-data/am-data
+    HUDR->>HDB: read AM subscription data
+    HDB-->>HUDR: AccessAndMobilitySubscriptionData
+    HUDR-->>HUDM: am-data
+    HUDM->>HUDR: Nudr_DR GET<br/>provisioned-data/smf-selection-subscription-data
+    HUDR->>HDB: read SMF selection subscription data
+    HDB-->>HUDR: SmfSelectionSubscriptionData
+    HUDR-->>HUDM: smf-selection-subscription-data
+    HUDM-->>PB: Authorized SDM objects
+
+    opt LBO DNN / S-NSSAI known and eligible
+        PB->>HUDM: Authorized Nudm_SDM GET<br/>sm-data with singleNssai + dnn + servingPlmn
+        HUDM->>HUDR: Nudr_DR GET<br/>provisioned-data/sm-data
+        HUDR->>HDB: read SessionManagementSubscriptionData<br/>DNN config, QoS, Session-AMBR, static IP
+        HDB-->>HUDR: SessionManagementSubscriptionData
+        HUDR-->>HUDM: sm-data
+        HUDM-->>PB: Authorized sm-data
+    end
+
+    PB->>CB: Evaluate preparation eligibility<br/>subscription intent + VPLMN capabilities
+    CB->>PCR: Check current executable capability<br/>NF availability, DNN/S-NSSAI, policy limits
+    PCR-->>CB: Current capability result
+    CB-->>PB: Preparation result<br/>LBO eligible / HR required / registration-only / none
+
+    PB->>SDMCF: Install PreparedSdmProfile<br/>am-data, smf-select-data,<br/>optional sm-data / nssai / ue-context-in-smf-data
+    SDMCF-->>PB: Installed with validity scope
+    PB->>RCF: Install UDM_ROUTE_ENTRY<br/>prepared SUPI/scope -> SDM-CF for nudm-sdm
+    PB->>RCF: Install DiscoveryCacheEntry<br/>UDM, SMF, PCF, optional NRF/NSSF routing keys
+    RCF-->>PB: Installed discovery/routing entries
+
+    opt SDM notification freshness supported
+        PB->>HUDM: Nudm_SDM POST<br/>sdm-subscriptions for prepared resources<br/>callback=SDM-CF/TOPSSIM endpoint
+        HUDM-->>PB: 201 Created<br/>subscriptionId
+        HUDM-->>SDMCF: Nudm_SDM notification<br/>initial report / later change notification
+        SDMCF-->>PB: refresh or invalidate PreparedSdmProfile
+    end
+    end
+
+    rect rgb(245,255,245)
+    note over UE,VPCF: Runtime registration - standard 5GS requests, prepared SDM/discovery served locally
+    UE->>gNB: RRC / NAS Registration Request
+    gNB->>VAMF: NGAP Initial UE Message<br/>Registration Request
+
+    VAMF->>RCF: Nnrf_NFDiscovery<br/>target=UDM, service=nudm-uecm
+    RCF-->>VAMF: H-UDM route<br/>UECM is runtime state, not SDM-CF
+    VAMF->>HUDM: Nudm_UECM PUT<br/>/{supi}/registrations/amf-3gpp-access
+    HUDM->>HUDR: Nudr_DR PUT<br/>context-data/amf-3gpp-access
+    HUDR->>HDB: update AMF registration context
+    HDB-->>HUDR: OK
+    HUDR-->>HUDM: 204 No Content
+    HUDM-->>VAMF: 201 Created / 200 OK
+
+    VAMF->>RCF: Nnrf_NFDiscovery<br/>target=UDM, service=nudm-sdm
+    RCF-->>VAMF: UDM-compatible producer = SDM-CF<br/>from UDM_ROUTE_ENTRY
+    VAMF->>SDMCF: Nudm_SDM GET<br/>/{supi}/am-data?plmn-id=VPLMN
+    SDMCF-->>VAMF: prepared am-data<br/>standard Nudm_SDM body
+    note over VAMF: compute Allowed NSSAI at runtime<br/>using prepared am-data
+
+    VAMF->>SDMCF: Nudm_SDM GET<br/>/{supi}/smf-select-data?plmn-id=VPLMN
+    SDMCF-->>VAMF: prepared smf-select-data
+    VAMF->>SDMCF: Nudm_SDM GET<br/>/{supi}/ue-context-in-smf-data
+    SDMCF-->>VAMF: prepared/empty UeContextInSmfData
+    VAMF->>SDMCF: Nudm_SDM POST<br/>sdm-subscriptions for am-data
+    SDMCF-->>VAMF: 201 Created<br/>local subscription or proxied subscription
+
+    VAMF->>RCF: Nnrf_NFDiscovery<br/>target=PCF, service=npcf-am-policy-control
+    RCF-->>VAMF: prepared V-PCF DiscoveryCacheEntry
+    VAMF->>VPCF: Npcf_AMPolicyControl POST<br/>/policies
+    note over VPCF: Association is created at runtime.<br/>Optional prepared AM policy input may be used.
+    VPCF-->>VAMF: PolicyAssociation
+
+    VAMF-->>gNB: NGAP Initial Context Setup / DL NAS<br/>Registration Accept
+    gNB-->>UE: NAS Registration Accept
+    UE-->>gNB: NAS Registration Complete
+    gNB-->>VAMF: NGAP Uplink NAS Transport<br/>Registration Complete
+    end
+
+    rect rgb(245,255,245)
+    note over UE,VUPF: Runtime PDU Session - prepared discovery and LBO sm-data when in scope
+    UE->>gNB: NAS UL Transport<br/>PDU Session Establishment Request<br/>DNN, S-NSSAI, PDU Session ID
+    gNB->>VAMF: NGAP Uplink NAS Transport<br/>PDU Session Establishment Request
+
+    VAMF->>RCF: Nnrf_NFDiscovery<br/>target=SMF, service=nsmf-pdusession<br/>DNN, S-NSSAI, TAI
+    RCF-->>VAMF: prepared V-SMF DiscoveryCacheEntry
+    VAMF->>VSMF: Nsmf_PDUSession POST<br/>/sm-contexts<br/>Create SM Context
+
+    VSMF->>RCF: Nnrf_NFDiscovery<br/>target=UDM, service=nudm-sdm
+    RCF-->>VSMF: UDM-compatible producer = SDM-CF<br/>if LBO sm-data scope matches
+    VSMF->>SDMCF: Nudm_SDM GET<br/>/{supi}/sm-data<br/>singleNssai, dnn, servingPlmn
+    SDMCF-->>VSMF: prepared sm-data<br/>DNN config, PDU type, SSC, QoS,<br/>Session-AMBR, static IP if present
+
+    VSMF->>SDMCF: Nudm_SDM POST<br/>sdm-subscriptions for sm-data
+    SDMCF-->>VSMF: 201 Created<br/>local subscription or proxied subscription
+
+    VSMF-->>VAMF: Nsmf_PDUSession 201 Created<br/>SM Context Created Data
+
+    VSMF->>RCF: Nnrf_NFDiscovery<br/>target=PCF, service=npcf-smpolicycontrol
+    RCF-->>VSMF: prepared V-PCF DiscoveryCacheEntry
+    VSMF->>VPCF: Npcf_SMPolicyControl POST<br/>/sm-policies
+    note over VPCF: SM policy association is runtime.<br/>Optional LBO SM policy-preparation record may select local templates.
+    VPCF-->>VSMF: SmPolicyDecision
+
+    VSMF->>VUPF: PFCP Session Establishment Request
+    VUPF-->>VSMF: PFCP Session Establishment Response
+    VSMF->>VAMF: Namf_Communication POST<br/>/ue-contexts/{supi}/n1-n2-messages
+    VAMF->>gNB: NGAP PDU Session Resource Setup Request
+    gNB->>UE: NAS PDU Session Establishment Accept
+    gNB-->>VAMF: NGAP PDU Session Resource Setup Response
+    VAMF->>VSMF: Nsmf_PDUSession POST<br/>/{smContextRef}/modify
+    VSMF->>VUPF: PFCP Session Modification Request
+    VUPF-->>VSMF: PFCP Session Modification Response
+    VSMF-->>VAMF: Nsmf_PDUSession Update SM Context Response
+    end
+
+    rect rgb(255,248,235)
+    note over RCF,SDMCF: Fallback rule<br/>On miss, expiry, authorization failure, invalidation, or scope mismatch,<br/>RCF/SDM-CF forward to the normal NRF/H-UDM path or fail closed by policy.
+    end

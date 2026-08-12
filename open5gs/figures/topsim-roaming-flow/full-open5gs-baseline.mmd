@@ -1,0 +1,118 @@
+%%{init: {
+  "theme": "default",
+  "sequence": {
+    "showSequenceNumbers": true,
+    "mirrorActors": false,
+    "wrap": true,
+    "width": 150
+  }
+}}%%
+sequenceDiagram
+    autonumber
+    participant UE
+    participant gNB
+    participant VAMF as V-AMF
+    participant VNRF as V-NRF
+    participant HUDM as H-UDM
+    participant HUDR as H-UDR
+    participant HDB as Open5GS DB
+    participant VPCF as V-PCF
+    participant VSMF as V-SMF
+    participant VUPF as V-UPF
+
+    %% Baseline Open5GS runtime path. No TOPSSIM, no SDM-CF, no RCF, no prefetch.
+    %% Main source paths: src/amf/gmm-sm.c, src/amf/nudm-build.c, src/amf/nudm-handler.c,
+    %% src/udm/ue-sm.c, src/udm/nudr-build.c, src/udm/nudr-handler.c,
+    %% src/udr/nudr-handler.c, src/amf/npcf-build.c, src/amf/npcf-handler.c,
+    %% src/amf/gmm-handler.c, src/amf/sbi-path.c, src/amf/nsmf-build.c,
+    %% src/smf/nudm-build.c, src/smf/nudm-handler.c, src/smf/npcf-build.c,
+    %% src/smf/npcf-handler.c.
+
+    rect rgb(245,245,245)
+    note over UE,VPCF: Registration and AM subscription/profile retrieval
+    UE->>gNB: RRC / NAS Registration Request
+    gNB->>VAMF: NGAP Initial UE Message<br/>Registration Request
+
+    VAMF->>VNRF: Nnrf_NFDiscovery<br/>target=UDM, service=nudm-uecm
+    VNRF-->>VAMF: NFProfile / apiRoot for H-UDM
+    VAMF->>HUDM: Nudm_UECM PUT<br/>/{supi}/registrations/amf-3gpp-access
+    HUDM->>HUDR: Nudr_DR PUT<br/>/subscription-data/{supi}/context-data/amf-3gpp-access
+    HUDR->>HDB: update AMF registration context<br/>and PEI/IMEISV if present
+    HDB-->>HUDR: OK
+    HUDR-->>HUDM: 204 No Content
+    HUDM-->>VAMF: 201 Created / 200 OK
+
+    VAMF->>VNRF: Nnrf_NFDiscovery<br/>target=UDM, service=nudm-sdm
+    VNRF-->>VAMF: NFProfile / apiRoot for H-UDM
+    VAMF->>HUDM: Nudm_SDM GET<br/>/{supi}/am-data?plmn-id=VPLMN
+    HUDM->>HUDR: Nudr_DR GET<br/>/subscription-data/{supi}/{servingPlmn}/provisioned-data/am-data
+    HUDR->>HDB: read AccessAndMobilitySubscriptionData<br/>GPSI, UE-AMBR, NSSAI, RAT restrictions
+    HDB-->>HUDR: subscription document
+    HUDR-->>HUDM: AccessAndMobilitySubscriptionData
+    HUDM-->>VAMF: am-data
+    note over VAMF: compute Allowed NSSAI<br/>amf_update_allowed_nssai()
+
+    VAMF->>HUDM: Nudm_SDM GET<br/>/{supi}/smf-select-data?plmn-id=VPLMN
+    HUDM->>HUDR: Nudr_DR GET<br/>.../provisioned-data/smf-selection-subscription-data
+    HUDR->>HDB: read SmfSelectionSubscriptionData<br/>S-NSSAI to DNN info, LBO flag
+    HDB-->>HUDR: subscription document
+    HUDR-->>HUDM: SmfSelectionSubscriptionData
+    HUDM-->>VAMF: smf-select-data
+
+    VAMF->>HUDM: Nudm_SDM GET<br/>/{supi}/ue-context-in-smf-data
+    HUDM-->>VAMF: UeContextInSmfData<br/>if available / empty continuity info
+
+    VAMF->>HUDM: Nudm_SDM POST<br/>/{supi}/sdm-subscriptions<br/>monitor am-data
+    HUDM-->>VAMF: 201 Created<br/>Location: subscriptionId
+
+    VAMF->>VNRF: Nnrf_NFDiscovery<br/>target=PCF, service=npcf-am-policy-control
+    VNRF-->>VAMF: V-PCF NFProfile
+    VAMF->>VPCF: Npcf_AMPolicyControl POST<br/>/policies<br/>PolicyAssociationRequest
+    VPCF-->>VAMF: PolicyAssociation<br/>UE-AMBR / triggers / policyAssociationId
+
+    VAMF-->>gNB: NGAP Initial Context Setup / DL NAS<br/>Registration Accept
+    gNB-->>UE: NAS Registration Accept
+    UE-->>gNB: NAS Registration Complete
+    gNB-->>VAMF: NGAP Uplink NAS Transport<br/>Registration Complete
+    end
+
+    rect rgb(250,250,250)
+    note over UE,VUPF: PDU Session establishment, SM subscription/profile retrieval, and policy
+    UE->>gNB: NAS UL Transport<br/>PDU Session Establishment Request<br/>DNN, S-NSSAI, PDU Session ID
+    gNB->>VAMF: NGAP Uplink NAS Transport<br/>PDU Session Establishment Request
+
+    VAMF->>VNRF: Nnrf_NFDiscovery<br/>target=SMF, service=nsmf-pdusession<br/>DNN, S-NSSAI, TAI
+    VNRF-->>VAMF: V-SMF NFProfile
+    VAMF->>VSMF: Nsmf_PDUSession POST<br/>/sm-contexts<br/>Create SM Context
+
+    VSMF->>VNRF: Nnrf_NFDiscovery<br/>target=UDM, service=nudm-sdm
+    VNRF-->>VSMF: NFProfile / apiRoot for H-UDM
+    VSMF->>HUDM: Nudm_SDM GET<br/>/{supi}/sm-data<br/>singleNssai, dnn, servingPlmn
+    HUDM->>HUDR: Nudr_DR GET<br/>.../provisioned-data/sm-data<br/>singleNssai, dnn
+    HUDR->>HDB: read SessionManagementSubscriptionData<br/>DNN config, PDU type, SSC, QoS, Session-AMBR, static IP
+    HDB-->>HUDR: subscription document
+    HUDR-->>HUDM: SessionManagementSubscriptionDataList
+    HUDM-->>VSMF: sm-data
+
+    VSMF->>HUDM: Nudm_SDM POST<br/>/{supi}/sdm-subscriptions<br/>monitor sm-data
+    HUDM-->>VSMF: 201 Created<br/>Location: subscriptionId
+
+    VSMF-->>VAMF: Nsmf_PDUSession 201 Created<br/>SM Context Created Data
+
+    VSMF->>VNRF: Nnrf_NFDiscovery<br/>target=PCF, service=npcf-smpolicycontrol
+    VNRF-->>VSMF: V-PCF NFProfile
+    VSMF->>VPCF: Npcf_SMPolicyControl POST<br/>/sm-policies<br/>SmPolicyContextData
+    VPCF-->>VSMF: SmPolicyDecision<br/>Session rules, PCC/QoS, AMBR
+
+    VSMF->>VUPF: PFCP Session Establishment Request<br/>N4 rules / UE address / tunnel info
+    VUPF-->>VSMF: PFCP Session Establishment Response
+
+    VSMF->>VAMF: Namf_Communication POST<br/>/ue-contexts/{supi}/n1-n2-messages<br/>N1 SM accept + N2 resource setup
+    VAMF->>gNB: NGAP PDU Session Resource Setup Request<br/>N1 SM container
+    gNB->>UE: NAS PDU Session Establishment Accept
+    gNB-->>VAMF: NGAP PDU Session Resource Setup Response
+    VAMF->>VSMF: Nsmf_PDUSession POST<br/>/{smContextRef}/modify<br/>N2 SM information / AN tunnel info
+    VSMF->>VUPF: PFCP Session Modification Request<br/>activate AN tunnel
+    VUPF-->>VSMF: PFCP Session Modification Response
+    VSMF-->>VAMF: Nsmf_PDUSession Update SM Context Response
+    end

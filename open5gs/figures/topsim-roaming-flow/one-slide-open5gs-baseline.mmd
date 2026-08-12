@@ -1,0 +1,67 @@
+%%{init: {
+  "theme": "default",
+  "sequence": {
+    "showSequenceNumbers": false,
+    "mirrorActors": false,
+    "wrap": true,
+    "width": 120
+  }
+}}%%
+sequenceDiagram
+    participant UE
+    participant gNB
+    participant VAMF as V-AMF
+    participant VNRF as V-NRF
+    participant HUDM as H-UDM
+    participant HUDR as H-UDR / DB
+    participant VPCF as V-PCF
+    participant VSMF as V-SMF
+    participant VUPF as V-UPF
+
+    %% One-slide baseline: real Open5GS services, grouped exchanges.
+    %% Expanded reference: full-open5gs-baseline.mmd.
+
+    rect rgb(245,245,245)
+    note over UE,VPCF: Registration: all subscription/profile data is fetched at runtime
+    UE->>gNB: NAS Registration Request
+    gNB->>VAMF: NGAP Initial UE Message
+    VAMF->>VNRF: Nnrf_NFDiscovery<br/>UDM for Nudm_UECM + Nudm_SDM
+    VNRF-->>VAMF: H-UDM NFProfile
+    VAMF->>HUDM: Nudm_UECM PUT<br/>AMF registration
+    HUDM->>HUDR: Nudr_DR PUT<br/>AMF context
+    HUDR-->>HUDM: OK
+    HUDM-->>VAMF: UECM created
+    VAMF->>HUDM: Nudm_SDM GET<br/>am-data, smf-select-data,<br/>ue-context-in-smf-data
+    HUDM->>HUDR: Nudr_DR GET<br/>AM + SMF-selection subscription data
+    HUDR-->>HUDM: subscription data
+    HUDM-->>VAMF: am-data + smf-select-data<br/>NSSAI, UE-AMBR, DNN/S-NSSAI
+    VAMF->>HUDM: Nudm_SDM POST<br/>sdm-subscriptions
+    HUDM-->>VAMF: subscriptionId
+    VAMF->>VNRF: Nnrf_NFDiscovery<br/>PCF for AM policy
+    VNRF-->>VAMF: V-PCF NFProfile
+    VAMF->>VPCF: Npcf_AMPolicyControl POST
+    VPCF-->>VAMF: PolicyAssociation
+    VAMF-->>UE: Registration Accept<br/>via gNB
+    end
+
+    rect rgb(250,250,250)
+    note over UE,VUPF: PDU Session: SM data and SM policy are also runtime lookups
+    UE->>gNB: PDU Session Establishment Request<br/>DNN, S-NSSAI
+    gNB->>VAMF: NGAP UL NAS Transport
+    VAMF->>VNRF: Nnrf_NFDiscovery<br/>SMF for Nsmf_PDUSession
+    VNRF-->>VAMF: V-SMF NFProfile
+    VAMF->>VSMF: Nsmf_PDUSession<br/>Create SM Context
+    VSMF->>VNRF: Nnrf_NFDiscovery<br/>UDM for Nudm_SDM
+    VNRF-->>VSMF: H-UDM NFProfile
+    VSMF->>HUDM: Nudm_SDM GET sm-data<br/>DNN, S-NSSAI, serving PLMN
+    HUDM->>HUDR: Nudr_DR GET sm-data
+    HUDR-->>HUDM: SessionManagementSubscriptionData
+    HUDM-->>VSMF: sm-data<br/>QoS, Session-AMBR, PDU type, static IP
+    VSMF->>HUDM: Nudm_SDM POST sdm-subscriptions
+    HUDM-->>VSMF: subscriptionId
+    VSMF->>VPCF: Npcf_SMPolicyControl POST
+    VPCF-->>VSMF: SmPolicyDecision
+    VSMF->>VUPF: PFCP Session Establishment
+    VUPF-->>VSMF: PFCP Response
+    VSMF-->>UE: PDU Session Establishment Accept<br/>via AMF/gNB
+    end

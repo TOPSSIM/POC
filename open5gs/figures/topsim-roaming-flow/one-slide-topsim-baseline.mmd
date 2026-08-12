@@ -1,0 +1,83 @@
+%%{init: {
+  "theme": "default",
+  "sequence": {
+    "showSequenceNumbers": false,
+    "mirrorActors": false,
+    "wrap": true,
+    "width": 120
+  }
+}}%%
+sequenceDiagram
+    participant TOP as TOPSSIM
+    participant HPLMN as HPLMN<br/>H-NRF/H-UDM/H-UDR
+    participant RCF
+    participant SDMCF as SDM-CF
+    participant UE
+    participant gNB
+    participant VAMF as V-AMF
+    participant VPCF as V-PCF
+    participant VSMF as V-SMF
+    participant VUPF as V-UPF
+
+    %% One-slide TOPSSIM baseline: real runtime services, preparation grouped.
+    %% Expanded reference: full-topsim-baseline.mmd.
+
+    rect rgb(232,245,255)
+    note over TOP,SDMCF: Phase 0: before roaming/runtime
+    TOP->>HPLMN: Nnrf_NFDiscovery + authorized Nudm_SDM<br/>am-data, smf-select-data,<br/>optional LBO sm-data
+    HPLMN-->>TOP: Authorized subscription data<br/>and producer info
+    TOP->>TOP: Compatibility check<br/>subscription intent vs VPLMN capability
+    TOP->>SDMCF: Install PreparedSdmProfile
+    TOP->>RCF: Install UDM_ROUTE_ENTRY<br/>and DiscoveryCacheEntry objects
+    opt freshness supported
+        TOP->>HPLMN: Nudm_SDM POST sdm-subscriptions
+        HPLMN-->>SDMCF: SDM notification / invalidation
+    end
+    end
+
+    rect rgb(245,255,245)
+    note over UE,VPCF: Runtime Registration: standard requests, prepared local answers
+    UE->>gNB: NAS Registration Request
+    gNB->>VAMF: NGAP Initial UE Message
+    VAMF->>RCF: Nnrf_NFDiscovery<br/>UDM for Nudm_UECM
+    RCF-->>VAMF: H-UDM route<br/>UECM stays authoritative
+    VAMF->>HPLMN: Nudm_UECM PUT<br/>AMF registration
+    HPLMN-->>VAMF: UECM created
+    VAMF->>RCF: Nnrf_NFDiscovery<br/>UDM for Nudm_SDM
+    RCF-->>VAMF: SDM-CF as UDM-compatible producer
+    VAMF->>SDMCF: Nudm_SDM GET<br/>am-data, smf-select-data,<br/>ue-context-in-smf-data
+    SDMCF-->>VAMF: prepared SDM responses
+    VAMF->>SDMCF: Nudm_SDM POST sdm-subscriptions
+    SDMCF-->>VAMF: local/proxied subscriptionId
+    VAMF->>RCF: Nnrf_NFDiscovery<br/>PCF for AM policy
+    RCF-->>VAMF: prepared V-PCF discovery result
+    VAMF->>VPCF: Npcf_AMPolicyControl POST
+    VPCF-->>VAMF: PolicyAssociation<br/>created at runtime
+    VAMF-->>UE: Registration Accept<br/>via gNB
+    end
+
+    rect rgb(245,255,245)
+    note over UE,VUPF: Runtime PDU Session: prepared discovery and sm-data if scope matches
+    UE->>gNB: PDU Session Establishment Request<br/>DNN, S-NSSAI
+    gNB->>VAMF: NGAP UL NAS Transport
+    VAMF->>RCF: Nnrf_NFDiscovery<br/>SMF for Nsmf_PDUSession
+    RCF-->>VAMF: prepared V-SMF discovery result
+    VAMF->>VSMF: Nsmf_PDUSession<br/>Create SM Context
+    VSMF->>RCF: Nnrf_NFDiscovery<br/>UDM for Nudm_SDM
+    RCF-->>VSMF: SDM-CF as producer<br/>if LBO sm-data scope matches
+    VSMF->>SDMCF: Nudm_SDM GET sm-data
+    SDMCF-->>VSMF: prepared sm-data<br/>QoS, Session-AMBR, PDU type, static IP
+    VSMF->>SDMCF: Nudm_SDM POST sdm-subscriptions
+    SDMCF-->>VSMF: local/proxied subscriptionId
+    VSMF->>RCF: Nnrf_NFDiscovery<br/>PCF for SM policy
+    RCF-->>VSMF: prepared V-PCF discovery result
+    VSMF->>VPCF: Npcf_SMPolicyControl POST
+    VPCF-->>VSMF: SmPolicyDecision<br/>association created at runtime
+    VSMF->>VUPF: PFCP Session Establishment
+    VUPF-->>VSMF: PFCP Response
+    VSMF-->>UE: PDU Session Establishment Accept<br/>via AMF/gNB
+    end
+
+    rect rgb(255,248,235)
+    note over RCF,SDMCF: Miss / expiry / scope mismatch:<br/>fallback to normal NRF / H-UDM path.
+    end
