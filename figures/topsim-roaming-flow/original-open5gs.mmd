@@ -1,0 +1,34 @@
+%%{init: {
+  "theme": "default",
+  "sequence": {
+    "showSequenceNumbers": false,
+    "mirrorActors": false,
+    "wrap": true,
+    "width": 135
+  }
+}}%%
+sequenceDiagram
+    participant UE
+    participant VAMF as V-AMF
+    participant VNRF as V-NRF
+    participant HUDM as H-UDM
+    participant VSMF as V-SMF
+
+    rect rgb(245,245,245)
+    note over UE,HUDM: Phase 1 - Registration
+    UE->>VAMF: Registration Request
+    VAMF->>VNRF: Nnrf_NFDiscovery<br/>discover H-UDM
+    VNRF-->>VAMF: H-UDM profile
+    VAMF->>HUDM: Nudm_SDM GET<br/>am-data, smf-select-data
+    HUDM-->>VAMF: AM + SMF-selection data
+    end
+
+    rect rgb(245,245,245)
+    note over UE,HUDM: Phase 2 - PDU Session
+    UE->>VAMF: PDU Session Request<br/>DNN, S-NSSAI
+    VAMF->>VNRF: Nnrf_NFDiscovery<br/>discover V-SMF
+    VNRF-->>VAMF: V-SMF profile
+    VAMF->>VSMF: Nsmf_PDUSession<br/>Create SM Context
+    VSMF->>HUDM: Discover H-UDM +<br/>Nudm_SDM GET sm-data
+    HUDM-->>VSMF: sm-data
+    end

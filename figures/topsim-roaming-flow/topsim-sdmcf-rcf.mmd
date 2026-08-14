@@ -1,0 +1,40 @@
+%%{init: {
+  "theme": "default",
+  "sequence": {
+    "showSequenceNumbers": false,
+    "mirrorActors": false,
+    "wrap": true,
+    "width": 135
+  }
+}}%%
+sequenceDiagram
+    participant TOP as TOPSSIM
+    participant CACHE as RCF / SDM-CF
+    participant HUDM as H-UDM
+    participant UE
+    participant VAMF as V-AMF
+    participant VSMF as V-SMF
+
+    rect rgb(232,245,255)
+    note over TOP,HUDM: Phase 0 - Before roaming
+    TOP->>HUDM: Prefetch eligible Nudm_SDM<br/>am-data, smf-select-data,<br/>optional LBO sm-data
+    HUDM-->>TOP: Authorized subscription data
+    TOP->>CACHE: Install PreparedSdmProfile<br/>DiscoveryCacheEntry<br/>UDM_ROUTE_ENTRY
+    end
+
+    rect rgb(240,255,240)
+    note over CACHE,VAMF: Phase 1 - Registration
+    UE->>VAMF: Registration Request
+    VAMF->>CACHE: Nnrf_NFDiscovery + Nudm_SDM<br/>am-data, smf-select-data
+    CACHE-->>VAMF: Local prepared AM +<br/>SMF-selection data
+    end
+
+    rect rgb(240,255,240)
+    note over CACHE,VSMF: Phase 2 - PDU Session
+    UE->>VAMF: PDU Session Request<br/>DNN, S-NSSAI
+    VAMF->>CACHE: Nnrf_NFDiscovery<br/>discover V-SMF
+    CACHE-->>VAMF: Cached V-SMF profile
+    VAMF->>VSMF: Nsmf_PDUSession<br/>Create SM Context
+    VSMF->>CACHE: Nnrf_NFDiscovery + Nudm_SDM<br/>GET sm-data
+    CACHE-->>VSMF: Local prepared sm-data
+    end

@@ -1,0 +1,63 @@
+%%{init: {
+  "theme": "default",
+  "sequence": {
+    "showSequenceNumbers": false,
+    "mirrorActors": false,
+    "wrap": true,
+    "width": 130
+  }
+}}%%
+sequenceDiagram
+    participant UE as UE / gNB
+    participant VAMF as V-AMF
+    participant VNRF as V-NRF
+    participant HNRF as H-NRF
+    participant HUDM as H-UDM
+    participant HUDR as H-UDR / Open5GS DB
+    participant VSMF as V-SMF
+
+    %% Profile-focused Open5GS baseline.
+    %% Non-profile exchanges are grouped to keep the slide readable.
+
+    rect rgb(245,245,245)
+    note over UE,HUDR: Phase 1 - Registration: AM profile fetched from HPLMN at runtime
+    UE->>VAMF: Registration procedure starts
+
+    VAMF->>VNRF: Nnrf_NFDiscovery<br/>Find UDM for Nudm_SDM<br/>target PLMN = HPLMN
+    VNRF->>HNRF: Forward Nnrf_NFDiscovery<br/>target NF = UDM<br/>no HPLMN NF cache in V-NRF
+    HNRF-->>VNRF: H-UDM NFProfile
+    VNRF-->>VAMF: Relayed H-UDM NFProfile
+
+    VAMF->>HUDM: Nudm_SDM GET<br/>am-data
+    HUDM->>HUDR: Nudr_DR GET<br/>access-and-mobility-subscription-data
+    HUDR-->>HUDM: AM subscription data
+    HUDM-->>VAMF: am-data<br/>UE-AMBR, RFSP, subscribed NSSAI refs
+
+    VAMF->>HUDM: Nudm_SDM GET<br/>smf-select-data
+    HUDM->>HUDR: Nudr_DR GET<br/>smf-selection-subscription-data
+    HUDR-->>HUDM: DNN / S-NSSAI selection data
+    HUDM-->>VAMF: smf-select-data<br/>DNN infos, S-NSSAI, roaming constraints
+
+    UE-->>VAMF: Registration completes
+    end
+
+    rect rgb(250,250,250)
+    note over UE,HUDR: Phase 2 - PDU Session: SM profile fetched from HPLMN at runtime
+    UE->>VAMF: PDU Session Establishment starts<br/>DNN, S-NSSAI
+
+    VAMF->>VNRF: Nnrf_NFDiscovery<br/>Find SMF for Nsmf_PDUSession
+    VNRF-->>VAMF: V-SMF NFProfile
+    VAMF->>VSMF: Create SM context<br/>profile lookup delegated to SMF
+
+    VSMF->>VNRF: Nnrf_NFDiscovery<br/>Find UDM for Nudm_SDM<br/>target PLMN = HPLMN
+    VNRF->>HNRF: Forward Nnrf_NFDiscovery<br/>target NF = UDM<br/>no HPLMN NF cache in V-NRF
+    HNRF-->>VNRF: H-UDM NFProfile
+    VNRF-->>VSMF: Relayed H-UDM NFProfile
+
+    VSMF->>HUDM: Nudm_SDM GET<br/>sm-data for DNN + S-NSSAI + serving PLMN
+    HUDM->>HUDR: Nudr_DR GET<br/>session-management-subscription-data
+    HUDR-->>HUDM: SM subscription data
+    HUDM-->>VSMF: sm-data<br/>QoS, Session-AMBR, PDU type, static IP
+
+    VSMF-->>UE: PDU session completes
+    end

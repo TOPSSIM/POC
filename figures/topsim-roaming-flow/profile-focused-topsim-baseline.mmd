@@ -1,0 +1,61 @@
+%%{init: {
+  "theme": "default",
+  "sequence": {
+    "showSequenceNumbers": false,
+    "mirrorActors": false,
+    "wrap": true,
+    "width": 130
+  }
+}}%%
+sequenceDiagram
+    participant TOP as TOPSSIM Domain
+    participant HPLMN as HPLMN<br/>H-NRF/H-UDM/H-UDR
+    participant RCF
+    participant SDMCF as SDM-CF
+    participant UE as UE / gNB
+    participant VAMF as V-AMF
+    participant VSMF as V-SMF
+
+    %% Profile-focused TOPSSIM baseline.
+    %% Runtime procedures remain standard; only profile/discovery acceleration is expanded.
+
+    rect rgb(232,245,255)
+    note over TOP,VSMF: Phase 0 - Before roaming/runtime: prepare profile and discovery answers
+    TOP->>HPLMN: Nnrf_NFDiscovery + authorized Nudm_SDM GET<br/>am-data, smf-select-data, sm-data
+    HPLMN-->>TOP: Authorized SDM profile data<br/>and producer metadata
+    TOP->>SDMCF: Install PreparedSdmProfile<br/>AM data, SMF selection data, SM data
+    TOP->>RCF: Install DiscoveryCacheEntry / UDM_ROUTE_ENTRY<br/>route Nudm_SDM to SDM-CF
+    end
+
+    rect rgb(245,255,245)
+    note over TOP,VSMF: Phase 1 - Registration: AM profile served locally by SDM-CF
+    UE->>VAMF: Registration procedure starts
+
+    VAMF->>RCF: Nnrf_NFDiscovery<br/>Find UDM for Nudm_SDM
+    RCF-->>VAMF: SDM-CF as UDM-compatible producer
+
+    VAMF->>SDMCF: Nudm_SDM GET<br/>am-data
+    SDMCF-->>VAMF: prepared am-data<br/>UE-AMBR, RFSP, subscribed NSSAI refs
+
+    VAMF->>SDMCF: Nudm_SDM GET<br/>smf-select-data
+    SDMCF-->>VAMF: prepared smf-select-data<br/>DNN infos, S-NSSAI, roaming constraints
+
+    UE-->>VAMF: Registration completes
+    end
+
+    rect rgb(245,255,245)
+    note over TOP,VSMF: Phase 2 - PDU Session: SM profile served locally if in TOPSSIM scope
+    UE->>VAMF: PDU Session Establishment starts<br/>DNN, S-NSSAI
+
+    VAMF->>RCF: Nnrf_NFDiscovery<br/>Find SMF for Nsmf_PDUSession
+    RCF-->>VAMF: prepared V-SMF discovery result
+    VAMF->>VSMF: Create SM context<br/>profile lookup delegated to SMF
+
+    VSMF->>RCF: Nnrf_NFDiscovery<br/>Find UDM for Nudm_SDM
+    RCF-->>VSMF: SDM-CF as UDM-compatible producer
+
+    VSMF->>SDMCF: Nudm_SDM GET<br/>sm-data for DNN + S-NSSAI + serving PLMN
+    SDMCF-->>VSMF: prepared sm-data<br/>QoS, Session-AMBR, PDU type, static IP
+
+    VSMF-->>UE: PDU session completes
+    end
